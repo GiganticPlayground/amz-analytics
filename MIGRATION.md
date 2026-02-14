@@ -12,7 +12,7 @@ The analytics code was extracted from OnDeviceScreenDemo and generalized into a 
 
 ```bash
 # From the amz-analytics directory
-cp src/csvAnalytics.ts /Users/austinhumes/dev/OnDeviceScreenDemo/src/utils/
+cp src/amzAnalytics.ts /Users/austinhumes/dev/OnDeviceScreenDemo/src/utils/
 ```
 
 ### Step 2: Update Your .env File
@@ -34,7 +34,7 @@ VITE_ANALYTICS_BATCH_TIMEOUT=30000
 Edit `/Users/austinhumes/dev/OnDeviceScreenDemo/src/main.tsx` (or `App.tsx`):
 
 ```typescript
-import { initializeAnalytics } from './utils/csvAnalytics';
+import { initializeAnalytics } from './utils/amzAnalytics';
 import {
   device,
   deviceCodename,
@@ -77,7 +77,7 @@ Edit `/Users/austinhumes/dev/OnDeviceScreenDemo/src/types/DemoInterface.ts`:
 
 ```typescript
 // Add import at the top
-import { trackEvent } from '../utils/csvAnalytics';
+import { trackEvent } from '../utils/amzAnalytics';
 
 // In the emitMetric function, add ONE line at the end:
 export function emitMetric(
@@ -138,8 +138,8 @@ npm run dev
 ### 2. Check Browser Console
 Open DevTools → Console, look for:
 ```
-[CSV Analytics] Event queued (1/25)
-[CSV Analytics] Batch sent successfully (25 events)
+[AMZ Analytics] Event queued (1/25)
+[AMZ Analytics] Batch sent successfully (25 events)
 ```
 
 ### 3. Check Network Tab
@@ -267,7 +267,7 @@ VITE_ENABLE_CSV_ANALYTICS=false
 ### Complete Removal
 1. Remove the `trackEvent()` call from `emitMetric()`
 2. Remove the `initializeAnalytics()` call from `main.tsx`
-3. Delete `src/utils/csvAnalytics.ts`
+3. Delete `src/utils/amzAnalytics.ts`
 4. Remove env variables from `.env`
 
 Everything else continues to work normally.
@@ -307,14 +307,14 @@ Check browser DevTools Performance tab:
 4. Firehose monitoring for delivery status
 
 ### Q: Can I customize the data format?
-**A**: Yes! Edit `csvAnalytics.ts`:
+**A**: Yes! Edit `amzAnalytics.ts`:
 - Add custom fields in the event object
 - Modify batching behavior
 - Add data transformations
 
 ## Next Steps
 
-1. ✅ Copy csvAnalytics.ts to your project
+1. ✅ Copy amzAnalytics.ts to your project
 2. ✅ Add environment variables
 3. ✅ Initialize analytics at app startup
 4. ✅ Add trackEvent() to emitMetric()

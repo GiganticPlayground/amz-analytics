@@ -67,7 +67,7 @@ aws firehose describe-delivery-stream \
 
 ```typescript
 // Initialize once at app startup
-import { initializeAnalytics, trackEvent, metricName } from './csvAnalytics';
+import { initializeAnalytics, trackEvent, metricName } from './amzAnalytics';
 
 initializeAnalytics({
   endpoint: 'https://YOUR-API.execute-api.us-west-1.amazonaws.com/events',
@@ -153,7 +153,7 @@ amz-analytics/
 │   ├── test_api.sh                      # Test API endpoint
 │   ├── json_to_csv.py                   # Convert JSON to CSV
 │   └── download_and_convert.sh          # Automated export
-├── src/csvAnalytics.ts                  # TypeScript module
+├── src/amzAnalytics.ts                  # TypeScript module
 └── docs/
     ├── SETUP.md                         # Deployment guide
     ├── INTEGRATION.md                   # App integration

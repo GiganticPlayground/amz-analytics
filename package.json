@@ -2,7 +2,7 @@
   "name": "amz-analytics",
   "version": "1.0.0",
   "description": "Lightweight analytics pipeline for capturing browser events and storing them in S3",
-  "main": "src/csvAnalytics.ts",
+  "main": "src/amzAnalytics.ts",
   "scripts": {
     "test-api": "bash scripts/test_api.sh",
     "convert": "python3 scripts/json_to_csv.py",

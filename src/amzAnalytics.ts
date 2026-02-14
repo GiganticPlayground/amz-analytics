@@ -1,5 +1,5 @@
 /**
- * CSV Analytics Module
+ * AMZ Analytics Module
  *
  * A standalone analytics module that batches events and sends them to AWS Kinesis
  * Firehose for CSV storage in S3.
@@ -120,7 +120,7 @@ class Analytics {
           try {
             parsedAttributes = JSON.parse(attributes);
           } catch (e) {
-            console.warn('[CSV Analytics] Failed to parse attributes:', e);
+            console.warn('[AMZ Analytics] Failed to parse attributes:', e);
             parsedAttributes = { raw: attributes };
           }
         } else {
@@ -145,14 +145,14 @@ class Analytics {
 
       // Add to queue
       this.eventQueue.push(event);
-      console.log(`[CSV Analytics] Event queued (${this.eventQueue.length}/${this.config.batchSize})`);
+      console.log(`[AMZ Analytics] Event queued (${this.eventQueue.length}/${this.config.batchSize})`);
 
       // Flush if we've reached the batch size
       if (this.eventQueue.length >= this.config.batchSize) {
         this.flush();
       }
     } catch (error) {
-      console.error('[CSV Analytics] Error tracking event:', error);
+      console.error('[AMZ Analytics] Error tracking event:', error);
     }
   }
 
@@ -217,7 +217,7 @@ class Analytics {
       const sent = navigator.sendBeacon(this.config.endpoint, blob);
 
       if (!sent) {
-        console.warn('[CSV Analytics] Failed to send beacon with batch of', batch.length, 'events');
+        console.warn('[AMZ Analytics] Failed to send beacon with batch of', batch.length, 'events');
       }
     } else {
       // Fallback: Try synchronous XHR (not recommended but better than nothing)
@@ -227,7 +227,7 @@ class Analytics {
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.send(JSON.stringify(batch));
       } catch (error) {
-        console.error('[CSV Analytics] Failed to send events synchronously:', error);
+        console.error('[AMZ Analytics] Failed to send events synchronously:', error);
       }
     }
   }
@@ -271,13 +271,13 @@ class Analytics {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      console.log(`[CSV Analytics] Batch sent successfully (${batch.length} events)`);
+      console.log(`[AMZ Analytics] Batch sent successfully (${batch.length} events)`);
     } catch (error) {
-      console.error('[CSV Analytics] Failed to send batch:', error);
+      console.error('[AMZ Analytics] Failed to send batch:', error);
 
       // Retry logic
       if (retryCount < this.config.maxRetries) {
-        console.log(`[CSV Analytics] Retrying (attempt ${retryCount + 1}/${this.config.maxRetries})`);
+        console.log(`[AMZ Analytics] Retrying (attempt ${retryCount + 1}/${this.config.maxRetries})`);
 
         // Exponential backoff: 1s, 2s, 4s
         const delay = Math.pow(2, retryCount) * 1000;
@@ -288,7 +288,7 @@ class Analytics {
         // Store failed batch for later retry or debugging
         this.failedBatches.push(batch);
         console.warn(
-          `[CSV Analytics] Failed after ${this.config.maxRetries} retries. ${batch.length} events lost.`
+          `[AMZ Analytics] Failed after ${this.config.maxRetries} retries. ${batch.length} events lost.`
         );
       }
     }
@@ -373,11 +373,11 @@ let analyticsInstance: Analytics | null = null;
  */
 export function initializeAnalytics(config: AnalyticsConfig): Analytics {
   if (analyticsInstance) {
-    console.log('[CSV Analytics] Destroying existing instance');
+    console.log('[AMZ Analytics] Destroying existing instance');
     analyticsInstance.destroy();
   }
 
-  console.log('[CSV Analytics] Initializing with endpoint:', config.endpoint);
+  console.log('[AMZ Analytics] Initializing with endpoint:', config.endpoint);
   analyticsInstance = new Analytics(config);
   return analyticsInstance;
 }
@@ -411,7 +411,7 @@ export function trackEvent(
   experimentGroup?: string
 ): void {
   if (!analyticsInstance) {
-    console.warn('[CSV Analytics] Not initialized. Call initializeAnalytics() first.');
+    console.warn('[AMZ Analytics] Not initialized. Call initializeAnalytics() first.');
     return;
   }
 

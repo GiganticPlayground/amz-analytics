@@ -110,10 +110,10 @@ cd scripts
 
 ### 3. Integrate with Your App
 
-Copy `src/csvAnalytics.ts` to your project and initialize:
+Copy `src/amzAnalytics.ts` to your project and initialize:
 
 ```typescript
-import { initializeAnalytics, trackEvent, MetricName } from './csvAnalytics';
+import { initializeAnalytics, trackEvent, MetricName } from './amzAnalytics';
 
 // Initialize at app startup with your app's context
 initializeAnalytics({
@@ -164,7 +164,7 @@ amz-analytics/
 │   ├── json_to_csv.py                # Convert JSON to CSV
 │   └── download_and_convert.sh       # Automated daily export
 ├── src/
-│   └── csvAnalytics.ts               # TypeScript analytics module
+│   └── amzAnalytics.ts               # TypeScript analytics module
 └── docs/
     ├── SETUP.md                      # Detailed setup guide
     ├── INTEGRATION.md                # App integration guide

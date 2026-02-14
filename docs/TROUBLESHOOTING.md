@@ -160,8 +160,8 @@ done
 **Check Browser Console**:
 1. Open DevTools → Console
 2. Look for:
-   - `[CSV Analytics] Event queued`
-   - `[CSV Analytics] Batch sent successfully`
+   - `[AMZ Analytics] Event queued`
+   - `[AMZ Analytics] Batch sent successfully`
    - Any error messages
 
 **Common Issues**:
@@ -343,13 +343,13 @@ batchTimeout: 60000,  // Less frequent sends
 
 ### Enable Verbose Logging
 
-In `csvAnalytics.ts`:
+In `amzAnalytics.ts`:
 ```typescript
 const DEBUG = true;  // Set to true
 
 function log(...args: any[]) {
   if (DEBUG) {
-    console.log('[CSV Analytics]', ...args);
+    console.log('[AMZ Analytics]', ...args);
   }
 }
 ```

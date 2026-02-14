@@ -40,7 +40,7 @@ VITE_ANALYTICS_ENDPOINT=https://abc123xyz.execute-api.us-west-1.amazonaws.com/ev
 Edit `src/types/DemoInterface.ts` and add one line:
 
 ```typescript
-import { trackEvent } from '../utils/csvAnalytics';
+import { trackEvent } from '../utils/amzAnalytics';
 
 export function emitMetric(
   name: metricName,
@@ -68,7 +68,7 @@ export function emitMetric(
 Then initialize at app startup in `src/main.tsx` or `src/App.tsx`:
 
 ```typescript
-import { initializeAnalytics } from './utils/csvAnalytics';
+import { initializeAnalytics } from './utils/amzAnalytics';
 
 // At the top of your file, before rendering
 initializeAnalytics({
@@ -82,7 +82,7 @@ initializeAnalytics({
 If you want to test without modifying `emitMetric`, manually call `trackEvent` in a few places:
 
 ```typescript
-import { trackEvent, metricName } from './utils/csvAnalytics';
+import { trackEvent, metricName } from './utils/amzAnalytics';
 
 // In a button click handler
 const handleClick = () => {
@@ -115,8 +115,8 @@ npm run preview
 2. **Interact with the app** (click buttons, navigate, etc.)
 3. **Look for log messages**:
    ```
-   [CSV Analytics] Event queued (1/25)
-   [CSV Analytics] Batch sent successfully (25 events)
+   [AMZ Analytics] Event queued (1/25)
+   [AMZ Analytics] Batch sent successfully (25 events)
    ```
 
 4. **Check Network tab** → Filter for your API endpoint
