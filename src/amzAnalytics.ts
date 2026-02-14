@@ -37,7 +37,7 @@ export interface DeviceContext {
   [key: string]: any;
 }
 
-interface AnalyticsEvent {
+export interface AnalyticsEvent {
   timestamp: number;
   metricName: string;
   value?: number;
@@ -441,5 +441,3 @@ export function getQueueSize(): number {
   return analyticsInstance?.getQueueSize() ?? 0;
 }
 
-// Export types
-export type { AnalyticsEvent, AnalyticsConfig };
