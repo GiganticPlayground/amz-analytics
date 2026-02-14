@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.js
+*.js.map
+!scripts/*.py
+!scripts/*.sh
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Analytics data (local testing)
+analytics_data/
+*.csv
+*.json
+!infrastructure/*.yaml
+!package.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# AWS
+.aws-sam/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+
+# Temp files
+/tmp/
+*.tmp
+*.bak

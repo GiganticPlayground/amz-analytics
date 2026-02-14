@@ -1,0 +1,32 @@
+{
+  "name": "amz-analytics",
+  "version": "1.0.0",
+  "description": "Lightweight analytics pipeline for capturing browser events and storing them in S3",
+  "main": "src/csvAnalytics.ts",
+  "scripts": {
+    "test-api": "bash scripts/test_api.sh",
+    "convert": "python3 scripts/json_to_csv.py",
+    "download": "bash scripts/download_and_convert.sh"
+  },
+  "keywords": [
+    "analytics",
+    "aws",
+    "kinesis",
+    "firehose",
+    "s3",
+    "csv",
+    "metrics",
+    "tracking"
+  ],
+  "author": "Amazon",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amazon/amz-analytics.git"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "python": ">=3.8"
+  }
+}

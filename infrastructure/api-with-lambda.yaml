@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'HTTP API + Lambda to Firehose integration for OnDeviceScreenDemo Analytics'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+    Description: Environment name (dev, staging, prod)
+
+  FirehoseStreamName:
+    Type: String
+    Default: AH_TEST_EFD_ANALYTICS
+    Description: Name of the existing Firehose delivery stream
+
+Resources:
+  # IAM Role for Lambda to write to Firehose
+  LambdaFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-analytics-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: FirehoseWriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !Sub 'arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseStreamName}'
+
+  # Lambda function to forward events to Firehose
+  AnalyticsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${EnvironmentName}-analytics-forwarder'
+      Description: Forwards analytics events from API Gateway to Firehose
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaFirehoseRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          FIREHOSE_STREAM_NAME: !Ref FirehoseStreamName
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import base64
+          from datetime import datetime
+
+          firehose = boto3.client('firehose')
+          STREAM_NAME = os.environ['FIREHOSE_STREAM_NAME']
+
+          def lambda_handler(event, context):
+              try:
+                  # Parse the request body
+                  if 'body' in event:
+                      if event.get('isBase64Encoded', False):
+                          body = base64.b64decode(event['body']).decode('utf-8')
+                      else:
+                          body = event['body']
+
+                      # Parse JSON
+                      data = json.loads(body) if isinstance(body, str) else body
+                  else:
+                      # Direct invocation
+                      data = event
+
+                  # Add server timestamp
+                  data['serverTimestamp'] = datetime.utcnow().isoformat() + 'Z'
+
+                  # Convert to JSON string and add newline for JSONL format
+                  record_data = json.dumps(data) + '\n'
+
+                  # Send to Firehose
+                  response = firehose.put_record(
+                      DeliveryStreamName=STREAM_NAME,
+                      Record={'Data': record_data.encode('utf-8')}
+                  )
+
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key',
+                          'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'status': 'success',
+                          'recordId': response['RecordId']
+                      })
+                  }
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'status': 'error',
+                          'message': str(e)
+                      })
+                  }
+
+  # Lambda permission for API Gateway to invoke
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AnalyticsLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AnalyticsHttpApi}/*'
+
+  # HTTP API Gateway
+  AnalyticsHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${EnvironmentName}-analytics-http-api'
+      Description: HTTP API for sending analytics events to Firehose via Lambda
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+        MaxAge: 300
+
+  # Lambda integration
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref AnalyticsHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AnalyticsLambda.Arn}/invocations'
+      IntegrationMethod: POST
+      PayloadFormatVersion: '2.0'
+
+  # Route for POST /events
+  EventsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref AnalyticsHttpApi
+      RouteKey: 'POST /events'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Default Stage with auto-deploy
+  DefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref AnalyticsHttpApi
+      StageName: $default
+      AutoDeploy: true
+      Description: Default stage for analytics API
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5000
+        ThrottlingRateLimit: 2000
+
+  # CloudWatch Log Group for Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AnalyticsLambda}'
+      RetentionInDays: 7
+
+Outputs:
+  ApiEndpoint:
+    Description: HTTP API endpoint URL for analytics (use this in your app)
+    Value: !Sub '${AnalyticsHttpApi.ApiEndpoint}/events'
+    Export:
+      Name: !Sub '${EnvironmentName}-analytics-api-endpoint'
+
+  ApiId:
+    Description: API Gateway ID
+    Value: !Ref AnalyticsHttpApi
+
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt AnalyticsLambda.Arn
+
+  LambdaFunctionName:
+    Description: Lambda function name (for testing)
+    Value: !Ref AnalyticsLambda
+
+  FirehoseStreamName:
+    Description: Firehose stream name being used
+    Value: !Ref FirehoseStreamName
