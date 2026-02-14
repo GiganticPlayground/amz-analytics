@@ -35,11 +35,37 @@ Edit `/Users/austinhumes/dev/OnDeviceScreenDemo/src/main.tsx` (or `App.tsx`):
 
 ```typescript
 import { initializeAnalytics } from './utils/csvAnalytics';
+import {
+  device,
+  deviceCodename,
+  lang,
+  connected,
+  banyan,
+  simplified,
+  retailer,
+  gitCommitSha,
+  gitBranch,
+  isVegaPlatform
+} from './utils';
 
 // Add this BEFORE ReactDOM.render or app initialization
 initializeAnalytics({
   endpoint: import.meta.env.VITE_ANALYTICS_ENDPOINT,
   enabled: import.meta.env.VITE_ENABLE_CSV_ANALYTICS === 'true',
+  // Pass your app's context - this will be included with every event
+  context: {
+    device,
+    deviceCodename,
+    language: lang,
+    connected,
+    banyan,
+    simplified,
+    retailer,
+    gitCommitSha,
+    gitBranch,
+    isVegaPlatform,
+    appVersion: import.meta.env.VITE_APP_VERSION || '1.0.0',
+  }
 });
 
 // Rest of your app initialization...

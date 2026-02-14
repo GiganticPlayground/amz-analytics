@@ -1,74 +1,82 @@
 /**
  * CSV Analytics Module
  *
- * Provides a wrapper around the existing emitMetric function that batches events
- * and sends them to AWS Kinesis Firehose for CSV storage in S3.
+ * A standalone analytics module that batches events and sends them to AWS Kinesis
+ * Firehose for CSV storage in S3.
  *
- * This module works alongside the native emitMetric function, not as a replacement.
- * Events are batched for efficiency and sent to Firehose, then formatted as CSV
- * on the server side.
+ * This module is framework-agnostic and can be integrated into any JavaScript/TypeScript
+ * application. It handles batching, retries, and reliable delivery of analytics events.
  */
 
-import { metricName } from '../types/DemoInterface';
-import {
-  device,
-  deviceCodename,
-  lang,
-  connected,
-  banyan,
-  simplified,
-  retailer,
-  gitCommitSha,
-  gitBranch,
-  isVegaPlatform,
-} from '../utils';
+/**
+ * Standard metric types
+ * Extend this enum to add custom metric types for your application
+ */
+export enum MetricName {
+  ContentElementInteraction = 'ContentElementInteraction',
+  ContentPlayDuration = 'ContentPlayDuration',
+  ContentPageLoad = 'ContentPageLoad',
+  ContentSectionLoad = 'ContentSectionLoad',
+  CustomerSatisfaction = 'CustomerSatisfaction',
+  // Add your custom metric types here
+}
 
-interface CSVMetricEvent {
-  timestamp: string;
+/**
+ * Device/application context that will be included with every event
+ * Customize this to match your application's context
+ */
+export interface DeviceContext {
+  device?: string;
+  deviceCodename?: string;
+  language?: string;
+  connected?: boolean;
+  gitCommitSha?: string;
+  gitBranch?: string;
+  appVersion?: string;
+  // Add your custom context fields here
+  [key: string]: any;
+}
+
+interface AnalyticsEvent {
+  timestamp: number;
   metricName: string;
   value?: number;
-  demoContentId?: string;
-  metricAttributes?: Record<string, unknown>;
-  demoExperimentGroup?: string;
-  // Device context fields
-  device: string;
-  deviceCodename: string;
-  language: string;
-  connected: boolean;
-  banyan: boolean;
-  simplified: boolean;
-  retailer: string;
-  gitCommitSha: string;
-  gitBranch: string;
-  isVegaPlatform: boolean;
-  // Additional metadata
+  contentId?: string;
+  attributes?: Record<string, any>;
+  experimentGroup?: string;
+  // Session metadata
   sessionId: string;
   userAgent: string;
+  // Device/app context (merged from config)
+  [key: string]: any;
 }
 
-interface CSVAnalyticsConfig {
-  firehoseUrl: string;
-  batchSize?: number;
-  flushInterval?: number;
-  maxRetries?: number;
+export interface AnalyticsConfig {
+  endpoint: string;
   enabled?: boolean;
+  batchSize?: number;
+  batchTimeout?: number;
+  maxRetries?: number;
+  // Optional: Add device/app context that will be included with every event
+  context?: DeviceContext;
 }
 
-class CSVAnalytics {
-  private config: Required<CSVAnalyticsConfig>;
-  private eventQueue: CSVMetricEvent[] = [];
+class Analytics {
+  private config: Required<Omit<AnalyticsConfig, 'context'>> & { context: DeviceContext };
+  private eventQueue: AnalyticsEvent[] = [];
   private sessionId: string;
-  private flushTimer: NodeJS.Timeout | null = null;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private isFlushingInProgress = false;
-  private failedBatches: CSVMetricEvent[][] = [];
+  private failedBatches: AnalyticsEvent[][] = [];
 
-  constructor(config: CSVAnalyticsConfig) {
+  constructor(config: AnalyticsConfig) {
     this.config = {
-      batchSize: config.batchSize ?? 25,
-      flushInterval: config.flushInterval ?? 30000, // 30 seconds
-      maxRetries: config.maxRetries ?? 3,
+      endpoint: config.endpoint,
       enabled: config.enabled ?? true,
-      firehoseUrl: config.firehoseUrl,
+      batchSize: config.batchSize ?? 25,
+      batchTimeout: config.batchTimeout ?? 30000, // 30 seconds
+      maxRetries: config.maxRetries ?? 3,
+      context: config.context ?? {},
     };
 
     // Generate a unique session ID for this page load
@@ -91,64 +99,60 @@ class CSVAnalytics {
   }
 
   /**
-   * Emit a metric event that will be batched and sent to Kinesis Firehose
+   * Track an analytics event
    */
-  public emitMetric(
-    name: metricName,
+  public trackEvent(
+    metricName: string,
     value?: number,
-    demoContentId?: string,
-    metricAttributes?: string,
-    demoExperimentGroup?: string
+    contentId?: string,
+    attributes?: string | Record<string, any>,
+    experimentGroup?: string
   ): void {
     if (!this.config.enabled) {
       return;
     }
 
     try {
-      // Parse metric attributes if provided
-      let parsedAttributes: Record<string, unknown> = {};
-      if (metricAttributes) {
-        try {
-          parsedAttributes = JSON.parse(metricAttributes);
-        } catch (e) {
-          console.warn('Failed to parse metricAttributes:', e);
-          parsedAttributes = { raw: metricAttributes };
+      // Parse attributes if it's a string
+      let parsedAttributes: Record<string, any> = {};
+      if (attributes) {
+        if (typeof attributes === 'string') {
+          try {
+            parsedAttributes = JSON.parse(attributes);
+          } catch (e) {
+            console.warn('[CSV Analytics] Failed to parse attributes:', e);
+            parsedAttributes = { raw: attributes };
+          }
+        } else {
+          parsedAttributes = attributes;
         }
       }
 
       // Create the event object with all context
-      const event: CSVMetricEvent = {
-        timestamp: new Date().toISOString(),
-        metricName: name,
+      const event: AnalyticsEvent = {
+        timestamp: Date.now(),
+        metricName,
         value,
-        demoContentId,
-        metricAttributes: parsedAttributes,
-        demoExperimentGroup,
-        // Device context
-        device,
-        deviceCodename,
-        language: lang,
-        connected,
-        banyan,
-        simplified,
-        retailer,
-        gitCommitSha,
-        gitBranch,
-        isVegaPlatform,
+        contentId,
+        attributes: parsedAttributes,
+        experimentGroup,
         // Session metadata
         sessionId: this.sessionId,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+        // Merge in device/app context from config
+        ...this.config.context,
       };
 
       // Add to queue
       this.eventQueue.push(event);
+      console.log(`[CSV Analytics] Event queued (${this.eventQueue.length}/${this.config.batchSize})`);
 
       // Flush if we've reached the batch size
       if (this.eventQueue.length >= this.config.batchSize) {
         this.flush();
       }
     } catch (error) {
-      console.error('Error emitting CSV metric:', error);
+      console.error('[CSV Analytics] Error tracking event:', error);
     }
   }
 
@@ -164,7 +168,7 @@ class CSVAnalytics {
       if (this.eventQueue.length > 0) {
         this.flush();
       }
-    }, this.config.flushInterval);
+    }, this.config.batchTimeout);
   }
 
   /**
@@ -186,11 +190,13 @@ class CSVAnalytics {
     });
 
     // Also handle visibility change (when tab is hidden)
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        this.flush();
-      }
-    });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          this.flush();
+        }
+      });
+    }
   }
 
   /**
@@ -208,20 +214,20 @@ class CSVAnalytics {
     if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
       const payload = JSON.stringify(batch);
       const blob = new Blob([payload], { type: 'application/json' });
-      const sent = navigator.sendBeacon(this.config.firehoseUrl, blob);
+      const sent = navigator.sendBeacon(this.config.endpoint, blob);
 
       if (!sent) {
-        console.warn('Failed to send beacon with batch of', batch.length, 'events');
+        console.warn('[CSV Analytics] Failed to send beacon with batch of', batch.length, 'events');
       }
     } else {
       // Fallback: Try synchronous XHR (not recommended but better than nothing)
       try {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', this.config.firehoseUrl, false); // false = synchronous
+        xhr.open('POST', this.config.endpoint, false); // false = synchronous
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.send(JSON.stringify(batch));
       } catch (error) {
-        console.error('Failed to send events synchronously:', error);
+        console.error('[CSV Analytics] Failed to send events synchronously:', error);
       }
     }
   }
@@ -247,11 +253,11 @@ class CSVAnalytics {
   }
 
   /**
-   * Send a batch of events to Kinesis Firehose
+   * Send a batch of events to the analytics endpoint
    */
-  private async sendBatch(batch: CSVMetricEvent[], retryCount = 0): Promise<void> {
+  private async sendBatch(batch: AnalyticsEvent[], retryCount = 0): Promise<void> {
     try {
-      const response = await fetch(this.config.firehoseUrl, {
+      const response = await fetch(this.config.endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -265,13 +271,13 @@ class CSVAnalytics {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      console.log(`Successfully sent batch of ${batch.length} events to Firehose`);
+      console.log(`[CSV Analytics] Batch sent successfully (${batch.length} events)`);
     } catch (error) {
-      console.error('Failed to send batch to Firehose:', error);
+      console.error('[CSV Analytics] Failed to send batch:', error);
 
       // Retry logic
       if (retryCount < this.config.maxRetries) {
-        console.log(`Retrying batch send (attempt ${retryCount + 1}/${this.config.maxRetries})`);
+        console.log(`[CSV Analytics] Retrying (attempt ${retryCount + 1}/${this.config.maxRetries})`);
 
         // Exponential backoff: 1s, 2s, 4s
         const delay = Math.pow(2, retryCount) * 1000;
@@ -281,7 +287,9 @@ class CSVAnalytics {
       } else {
         // Store failed batch for later retry or debugging
         this.failedBatches.push(batch);
-        console.warn(`Failed to send batch after ${this.config.maxRetries} retries. Stored for debugging.`);
+        console.warn(
+          `[CSV Analytics] Failed after ${this.config.maxRetries} retries. ${batch.length} events lost.`
+        );
       }
     }
   }
@@ -289,7 +297,7 @@ class CSVAnalytics {
   /**
    * Get failed batches for debugging or manual retry
    */
-  public getFailedBatches(): CSVMetricEvent[][] {
+  public getFailedBatches(): AnalyticsEvent[][] {
     return this.failedBatches;
   }
 
@@ -330,58 +338,108 @@ class CSVAnalytics {
   public getQueueSize(): number {
     return this.eventQueue.length;
   }
+
+  /**
+   * Get the session ID
+   */
+  public getSessionId(): string {
+    return this.sessionId;
+  }
 }
 
 // Singleton instance
-let analyticsInstance: CSVAnalytics | null = null;
+let analyticsInstance: Analytics | null = null;
 
 /**
- * Initialize the CSV analytics module
- * Must be called before using emitCSVMetric
+ * Initialize the analytics module
+ * Must be called before using trackEvent
+ *
+ * @example
+ * ```typescript
+ * initializeAnalytics({
+ *   endpoint: 'https://your-api.execute-api.us-west-1.amazonaws.com/events',
+ *   enabled: true,
+ *   batchSize: 25,
+ *   batchTimeout: 30000,
+ *   context: {
+ *     device: 'echo-show-8',
+ *     deviceCodename: 'cypress',
+ *     language: 'en_us',
+ *     appVersion: '1.0.0',
+ *     gitCommitSha: 'abc123',
+ *   }
+ * });
+ * ```
  */
-export function initCSVAnalytics(config: CSVAnalyticsConfig): CSVAnalytics {
+export function initializeAnalytics(config: AnalyticsConfig): Analytics {
   if (analyticsInstance) {
+    console.log('[CSV Analytics] Destroying existing instance');
     analyticsInstance.destroy();
   }
 
-  analyticsInstance = new CSVAnalytics(config);
+  console.log('[CSV Analytics] Initializing with endpoint:', config.endpoint);
+  analyticsInstance = new Analytics(config);
   return analyticsInstance;
 }
 
 /**
  * Get the current analytics instance
  */
-export function getCSVAnalytics(): CSVAnalytics | null {
+export function getAnalyticsInstance(): Analytics | null {
   return analyticsInstance;
 }
 
 /**
- * Emit a metric event to CSV analytics
+ * Track an analytics event
  * This is a convenience wrapper that uses the singleton instance
+ *
+ * @example
+ * ```typescript
+ * trackEvent(
+ *   'ContentElementInteraction',
+ *   undefined,
+ *   'ButtonClicked-123',
+ *   JSON.stringify({ action: 'click', button: 'submit' })
+ * );
+ * ```
  */
-export function emitCSVMetric(
-  name: metricName,
+export function trackEvent(
+  metricName: string,
   value?: number,
-  demoContentId?: string,
-  metricAttributes?: string,
-  demoExperimentGroup?: string
+  contentId?: string,
+  attributes?: string | Record<string, any>,
+  experimentGroup?: string
 ): void {
   if (!analyticsInstance) {
-    console.warn('CSV Analytics not initialized. Call initCSVAnalytics() first.');
+    console.warn('[CSV Analytics] Not initialized. Call initializeAnalytics() first.');
     return;
   }
 
-  analyticsInstance.emitMetric(name, value, demoContentId, metricAttributes, demoExperimentGroup);
+  analyticsInstance.trackEvent(metricName, value, contentId, attributes, experimentGroup);
 }
 
 /**
  * Manually flush all pending events
  */
-export async function flushCSVMetrics(): Promise<void> {
+export async function flushEvents(): Promise<void> {
   if (analyticsInstance) {
     await analyticsInstance.flush();
   }
 }
 
+/**
+ * Get the current session ID
+ */
+export function getSessionId(): string | null {
+  return analyticsInstance?.getSessionId() ?? null;
+}
+
+/**
+ * Get the number of queued events
+ */
+export function getQueueSize(): number {
+  return analyticsInstance?.getQueueSize() ?? 0;
+}
+
 // Export types
-export type { CSVMetricEvent, CSVAnalyticsConfig };
+export type { AnalyticsEvent, AnalyticsConfig };
