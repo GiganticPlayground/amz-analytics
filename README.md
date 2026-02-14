@@ -113,22 +113,31 @@ cd scripts
 Copy `src/csvAnalytics.ts` to your project and initialize:
 
 ```typescript
-import { initializeAnalytics, trackEvent, metricName } from './csvAnalytics';
+import { initializeAnalytics, trackEvent, MetricName } from './csvAnalytics';
 
-// Initialize at app startup
+// Initialize at app startup with your app's context
 initializeAnalytics({
   endpoint: 'https://YOUR-API-ID.execute-api.us-west-1.amazonaws.com/events',
   enabled: true,
   batchSize: 25,        // Send after 25 events
   batchTimeout: 30000,  // Or after 30 seconds
+  // Optional: Add context that will be included with every event
+  context: {
+    device: 'my-device',
+    deviceCodename: 'my-code',
+    language: 'en_us',
+    appVersion: '1.0.0',
+    gitCommitSha: 'abc123',
+    // Add any custom fields you need
+  }
 });
 
 // Track events
 trackEvent(
-  metricName.ContentElementInteraction,
+  MetricName.ContentElementInteraction,
   undefined,
   'ButtonClicked-123',
-  JSON.stringify({ action: 'click', button: 'submit' })
+  { action: 'click', button: 'submit' }  // Can pass object or JSON string
 );
 ```
 
@@ -266,13 +275,13 @@ For **10 million events/month**:
 
 ```typescript
 trackEvent(
-  metricName.ContentPageLoad,
+  MetricName.ContentPageLoad,
   undefined,
   'HomePage-loaded',
-  JSON.stringify({
+  {
     path: '/home',
     loadTime: 1234
-  })
+  }
 );
 ```
 
@@ -280,13 +289,13 @@ trackEvent(
 
 ```typescript
 trackEvent(
-  metricName.ContentPlayDuration,
+  MetricName.ContentPlayDuration,
   15000,  // 15 seconds
   'VideoPlayed-abc123',
-  JSON.stringify({
+  {
     videoId: 'abc123',
     videoName: 'Tutorial'
-  })
+  }
 );
 ```
 
@@ -294,15 +303,27 @@ trackEvent(
 
 ```typescript
 trackEvent(
-  metricName.ContentElementInteraction,
+  MetricName.ContentElementInteraction,
   undefined,
   'FormSubmitted-contact',
-  JSON.stringify({
+  {
     action: 'submit',
     formType: 'contact',
     fieldCount: 5,
     validationErrors: 0
-  })
+  }
+);
+```
+
+### Custom Metric Names
+
+```typescript
+// You can also use string literals for custom metric types
+trackEvent(
+  'MyCustomMetric',
+  42,
+  'custom-event-id',
+  { customField: 'value' }
 );
 ```
 
