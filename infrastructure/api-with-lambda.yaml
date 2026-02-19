@@ -42,8 +42,8 @@ Resources:
   AnalyticsLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${EnvironmentName}-analytics-forwarder'
-      Description: Forwards analytics events from API Gateway to Firehose
+      FunctionName: !Sub '${EnvironmentName}-analytics-forwarder-v5'
+      Description: Forwards analytics events from API Gateway to Firehose (v5 - Lambda handles all CORS)
       Runtime: python3.11
       Handler: index.lambda_handler
       Role: !GetAtt LambdaFirehoseRole.Arn
@@ -53,6 +53,7 @@ Resources:
           FIREHOSE_STREAM_NAME: !Ref FirehoseStreamName
       Code:
         ZipFile: |
+          # Version 3.0 - null origin CORS fix for file:// loaded apps
           import json
           import boto3
           import os
@@ -62,7 +63,24 @@ Resources:
           firehose = boto3.client('firehose')
           STREAM_NAME = os.environ['FIREHOSE_STREAM_NAME']
 
+          def get_cors_headers(event):
+              # Echo back the request origin, or use * as fallback
+              # This handles null origins from file:// loaded apps on device
+              origin = event.get('headers', {}).get('origin', '*')
+              return {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': origin,
+                  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key',
+                  'Access-Control-Allow-Methods': 'POST,OPTIONS'
+              }
+
           def lambda_handler(event, context):
+              cors_headers = get_cors_headers(event)
+
+              # Handle OPTIONS preflight request explicitly
+              if event.get('requestContext', {}).get('http', {}).get('method') == 'OPTIONS':
+                  return {'statusCode': 200, 'headers': cors_headers, 'body': ''}
+
               try:
                   # Parse the request body
                   if 'body' in event:
@@ -77,40 +95,49 @@ Resources:
                       # Direct invocation
                       data = event
 
-                  # Add server timestamp
-                  data['serverTimestamp'] = datetime.utcnow().isoformat() + 'Z'
+                  # Handle both single events and batches (arrays)
+                  events = data if isinstance(data, list) else [data]
 
-                  # Convert to JSON string and add newline for JSONL format
-                  record_data = json.dumps(data) + '\n'
+                  # Add server timestamp and prepare records for Firehose
+                  records = []
+                  for item in events:
+                      item['serverTimestamp'] = datetime.utcnow().isoformat() + 'Z'
+                      # Convert to JSON string and add newline for JSONL format
+                      record_data = json.dumps(item) + '\n'
+                      records.append({'Data': record_data.encode('utf-8')})
 
-                  # Send to Firehose
-                  response = firehose.put_record(
-                      DeliveryStreamName=STREAM_NAME,
-                      Record={'Data': record_data.encode('utf-8')}
-                  )
+                  # Send to Firehose (use batch if multiple, single if one)
+                  if len(records) > 1:
+                      response = firehose.put_record_batch(
+                          DeliveryStreamName=STREAM_NAME,
+                          Records=records
+                      )
+                      # Extract record IDs from batch response
+                      record_ids = [resp.get('RecordId', '') for resp in response.get('RequestResponses', [])]
+                  else:
+                      response = firehose.put_record(
+                          DeliveryStreamName=STREAM_NAME,
+                          Record=records[0]
+                      )
+                      record_ids = [response.get('RecordId', '')]
 
                   return {
                       'statusCode': 200,
-                      'headers': {
-                          'Content-Type': 'application/json',
-                          'Access-Control-Allow-Origin': '*',
-                          'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key',
-                          'Access-Control-Allow-Methods': 'POST,OPTIONS'
-                      },
+                      'headers': cors_headers,
                       'body': json.dumps({
                           'status': 'success',
-                          'recordId': response['RecordId']
+                          'count': len(events),
+                          'recordIds': record_ids
                       })
                   }
 
               except Exception as e:
                   print(f"Error: {str(e)}")
+                  import traceback
+                  traceback.print_exc()
                   return {
                       'statusCode': 500,
-                      'headers': {
-                          'Content-Type': 'application/json',
-                          'Access-Control-Allow-Origin': '*'
-                      },
+                      'headers': cors_headers,
                       'body': json.dumps({
                           'status': 'error',
                           'message': str(e)
@@ -126,25 +153,13 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AnalyticsHttpApi}/*'
 
-  # HTTP API Gateway
+  # HTTP API Gateway - no CorsConfiguration so Lambda handles all CORS headers
   AnalyticsHttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: !Sub '${EnvironmentName}-analytics-http-api'
       Description: HTTP API for sending analytics events to Firehose via Lambda
       ProtocolType: HTTP
-      CorsConfiguration:
-        AllowOrigins:
-          - '*'
-        AllowMethods:
-          - POST
-          - OPTIONS
-        AllowHeaders:
-          - Content-Type
-          - X-Amz-Date
-          - Authorization
-          - X-Api-Key
-        MaxAge: 300
 
   # Lambda integration
   LambdaIntegration:
@@ -162,6 +177,14 @@ Resources:
     Properties:
       ApiId: !Ref AnalyticsHttpApi
       RouteKey: 'POST /events'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # Route for OPTIONS /events - preflight goes to Lambda so it can echo back correct origin
+  OptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref AnalyticsHttpApi
+      RouteKey: 'OPTIONS /events'
       Target: !Sub 'integrations/${LambdaIntegration}'
 
   # Default Stage with auto-deploy
